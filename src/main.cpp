@@ -24,12 +24,13 @@ sh2_SensorValue_t sensorValue;
 // GPS USB setup
 USBHost myusb;
 USBSerial_BigBuffer gpsSerial(myusb);
-#define UPDATE_INTERVAL 100
+#define UPDATE_INTERVAL 1 //Change sampling frequency (1000 hz right now)
 uint32_t lastUpdate = 0;
 
 #define LED1_PIN 4
 #define LED2_PIN 9
 #define LED3_PIN 10
+#define BPS A12
 
 time_t get_teensy3_time() { return Teensy3Clock.get(); }
 String lastLine = "";
@@ -40,6 +41,8 @@ bool imuFail = false;
 int hall;
 int shock_pot;
 int shock_pot2;
+int bps;
+int voltageDividerRatio = 0.33;
 float roll = 0;
 float pitch = 0;
 float yaw = 0;
@@ -50,6 +53,10 @@ float ax = 0;
 float ay = 0;
 float az = 0;
 float gyx = 0;
+float qw = 0;
+float qx = 0;
+float qy = 0;
+float qz = 0;
 float rw = 0;
 float rx = 0;
 float ry = 0;
@@ -72,6 +79,7 @@ float convertToDecimal(float nmeaCoord, String direction) {
     if (direction == "S" || direction == "W") decimal *= -1.0;
     return decimal;
 }
+//y is forward, x is right, z is up and down
 void imuToCarFrame(float imuX, float imuY, float imuZ, float &carX, float &carY, float &carZ) {
     carX = imuZ;       // IMU Z -> Car X (forward) 
     carY = -imuX;      // IMU X -> Car Y (left)
@@ -144,7 +152,7 @@ void setup() {
     if (!SD.exists(log_name)) {
         logFile = SD.open(log_name, FILE_WRITE);
     if (logFile) {
-        logFile.println("Timestamp,CarRoll,CarPitch,CarYaw,RollGrad,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,PitchRate,RollRate,YawRate,qw,qx,qy,qz,ShockPot1,ShockPot2");
+        logFile.println("Timestamp,CarRoll,CarPitch,CarYaw,RollGrad,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,PitchRate,RollRate,YawRate,qw,qx,qy,qz,ShockPot1,ShockPot2,BrakePressure");
         logFile.close();
     } else {
         Serial.println("Failed to create new log file");
@@ -229,10 +237,10 @@ void loop() {
 
             case SH2_ROTATION_VECTOR: {
                 //Quaternions in IMU frame
-                float qw = sensorValue.un.rotationVector.real;
-                float qx = sensorValue.un.rotationVector.i;
-                float qy = sensorValue.un.rotationVector.j;
-                float qz = sensorValue.un.rotationVector.k;
+                qw = sensorValue.un.rotationVector.real;
+                qx = sensorValue.un.rotationVector.i;
+                qy = sensorValue.un.rotationVector.j;
+                qz = sensorValue.un.rotationVector.k;
                 uint8_t acc = sensorValue.un.rotationVector.accuracy;
                 // Serial.print("ACCURACY: ");
                 // Serial.println(acc);
@@ -291,20 +299,24 @@ void loop() {
         
         // hall sensor
         hall = analogRead(A1);
-        float voltage_h = ((hall / 1023.0) * 3.3);
+        float voltage_h = ((hall / 4095.0) * 3.3);
         float deg = (voltage_h / 3.3) * 360.0;
         
         //shock pot
         shock_pot = analogRead(A2);
-        float voltage_sp = ((shock_pot / 1023.0) * 3.3);
+        float voltage_sp = ((shock_pot / 4095.0) * 3.3);
         float distance = (voltage_sp / 3.3) * 250;
 
         //shock pot2
         shock_pot2 = analogRead(A13);
-        float voltage_sp2 = ((shock_pot2 / 1023.0) * 3.3);
+        float voltage_sp2 = ((shock_pot2 / 4095.0) * 3.3);
         float distance2 = (voltage_sp2 / 3.3) * 250;
       
-        
+        //break pressure
+        bps = analogRead(BPS);
+        float voltage = ((bps / 1023.0) * 3.3);
+        float voltage_bps = voltage / voltageDividerRatio;
+        float pressure = (voltage_bps / 10.0) * 200; //presureFSR = 200
 
         // Display on OLED
         display.clearDisplay();
@@ -391,13 +403,14 @@ void loop() {
             logFile.print(rollRate); logFile.print(",");
             logFile.print(yawRate); logFile.print(",");
 
-            logFile.print(rw); logFile.print(",");
-            logFile.print(rx); logFile.print(",");
-            logFile.print(ry); logFile.print(",");
-            logFile.print(rz); logFile.print(",");
+            logFile.print(qw); logFile.print(",");
+            logFile.print(qx); logFile.print(",");
+            logFile.print(qy); logFile.print(",");
+            logFile.print(qz); logFile.print(",");
 
             logFile.print(distance); logFile.print(",");
-            logFile.println(distance2); 
+            logFile.println(distance2); logFile.print(",");
+            logFile.println(pressure);
 
             logFile.close();  
         } else {
