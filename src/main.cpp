@@ -42,7 +42,7 @@ int hall;
 int shock_pot;
 int shock_pot2;
 int bps;
-int voltageDividerRatio = 0.33;
+int voltageDividerRatio = 0.735;
 float roll = 0;
 float pitch = 0;
 float yaw = 0;
@@ -314,9 +314,9 @@ void loop() {
       
         //break pressure
         bps = analogRead(BPS);
-        float voltage = ((bps / 1023.0) * 3.3);
+        float voltage = ((bps / 4095.0) * 3.3);
         float voltage_bps = voltage / voltageDividerRatio;
-        float pressure = (voltage_bps / 10.0) * 200; //presureFSR = 200
+        float pressure = (voltage_bps - 0.5) * (2900.75 / 4.0); 
 
         // Display on OLED
         display.clearDisplay();
