@@ -193,10 +193,10 @@ void setup() {
         imuFail = true;
         while (true);
     }
-    bno08x.enableReport(SH2_CAL_ACCEL, 10000);
-    bno08x.enableReport(SH2_ROTATION_VECTOR, 10000);
-    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 10000);
-    bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 10000);
+    bno08x.enableReport(SH2_CAL_ACCEL, 2500);
+    bno08x.enableReport(SH2_ROTATION_VECTOR, 2500);
+    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2500);
+    bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 2500);
 
     // Initialize GPS
     myusb.begin();
