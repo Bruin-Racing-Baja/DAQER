@@ -24,7 +24,7 @@ sh2_SensorValue_t sensorValue;
 // GPS USB setup
 USBHost myusb;
 USBSerial_BigBuffer gpsSerial(myusb);
-#define UPDATE_INTERVAL 1 //Change sampling frequency (1000 hz right now)
+#define UPDATE_INTERVAL 100 //Change sampling frequency (1000 hz right now)
 uint32_t lastUpdate = 0;
 
 #define LED1_PIN 4
@@ -223,78 +223,78 @@ void loop() {
         }
     }
     // IMU data
-  
-    while (bno08x.getSensorEvent(&sensorValue)) {
-        switch (sensorValue.sensorId) {
-            case SH2_CAL_ACCEL: {
-                float ax_imu = sensorValue.un.accelerometer.x;
-                float ay_imu = sensorValue.un.accelerometer.y;
-                float az_imu = sensorValue.un.accelerometer.z;
-                imuToCarFrame(ax_imu, ay_imu, az_imu, ax, ay, az);
-                lateralAccel = ay;
-            break;
-            }
-
-            case SH2_ROTATION_VECTOR: {
-                //Quaternions in IMU frame
-                qw = sensorValue.un.rotationVector.real;
-                qx = sensorValue.un.rotationVector.i;
-                qy = sensorValue.un.rotationVector.j;
-                qz = sensorValue.un.rotationVector.k;
-                uint8_t acc = sensorValue.un.rotationVector.accuracy;
-                // Serial.print("ACCURACY: ");
-                // Serial.println(acc);
-
-                //transformation quaternion (depends on sensor mounting)
-                float ow = 0.5, ox = 0.5, oy = -0.5, oz = 0.5;
-
-                //quaternion multiplication (Carq = fixedq * imuQ)
-                rw = ow * qw - ox * qx - oy * qy - oz * qz;
-                rx = ow * qx + ox * qw + oy * qz - oz * qy;
-                ry = ow * qy - ox * qz + oy * qw + oz * qx;
-                rz = ow * qz + ox * qy - oy * qx + oz * qw;
-
-                //roation around car's x-axis aka side to side tilt
-                roll  = atan2(2.0 * (rw * rx + ry * rz), 1.0 - 2.0 * (rx * rx + ry * ry)) * 180.0 / PI;
-                float sinp = 2.0 * (rw * ry - rz * rx);
-                sinp = constrain(sinp, -1.0, 1.0);
-                //rotation around car's y-axis aka front to back tilt
-                pitch = asin(sinp) * 180.0 / PI;
-                //rotation around car's z-axis aka heading
-                yaw   = atan2(2.0 * (rw * rz + rx * ry), 1.0 - 2.0 * (ry * ry + rz * rz)) * 180.0 / PI;
-                break;
-            }
-
-            case SH2_LINEAR_ACCELERATION: {
-                float lax_imu = sensorValue.un.linearAcceleration.x;
-                float lay_imu = sensorValue.un.linearAcceleration.y;
-                float laz_imu = sensorValue.un.linearAcceleration.z;
-                float lax, lay, laz;
-                imuToCarFrame(lax_imu, lay_imu, laz_imu, lax, lay, laz);
-                forwardAccel = lax;
-                lateralAccel = lay;
-                heaveAccel = laz;
-                break;
-            }
-
-            case SH2_GYROSCOPE_CALIBRATED: {
-                float gx_imu = sensorValue.un.gyroscope.x;
-                float gy_imu = sensorValue.un.gyroscope.y;
-                float gz_imu = sensorValue.un.gyroscope.z;
-                float gx, gy, gz;
-                imuToCarFrame(gx_imu, gy_imu, gz_imu, gx, gy, gz);
-                pitchRate = gx * RAD_TO_DEG;   // Rotation around car X (forward)
-                rollRate  = gy * RAD_TO_DEG;   // Rotation around car Y (left)
-                yawRate   = gz * RAD_TO_DEG;   // Rotation around car Z (up)
-
-                break;
-            }
-        }
-    }
-
-    
     if (millis() - lastUpdate > UPDATE_INTERVAL) {
         lastUpdate = millis();
+        while (bno08x.getSensorEvent(&sensorValue)) {
+            switch (sensorValue.sensorId) {
+                case SH2_CAL_ACCEL: {
+                    float ax_imu = sensorValue.un.accelerometer.x;
+                    float ay_imu = sensorValue.un.accelerometer.y;
+                    float az_imu = sensorValue.un.accelerometer.z;
+                    imuToCarFrame(ax_imu, ay_imu, az_imu, ax, ay, az);
+                    lateralAccel = ay;
+                break;
+                }
+
+                case SH2_ROTATION_VECTOR: {
+                    //Quaternions in IMU frame
+                    qw = sensorValue.un.rotationVector.real;
+                    qx = sensorValue.un.rotationVector.i;
+                    qy = sensorValue.un.rotationVector.j;
+                    qz = sensorValue.un.rotationVector.k;
+                    uint8_t acc = sensorValue.un.rotationVector.accuracy;
+                    // Serial.print("ACCURACY: ");
+                    // Serial.println(acc);
+
+                    //transformation quaternion (depends on sensor mounting)
+                    float ow = 0.5, ox = 0.5, oy = -0.5, oz = 0.5;
+
+                    //quaternion multiplication (Carq = fixedq * imuQ)
+                    rw = ow * qw - ox * qx - oy * qy - oz * qz;
+                    rx = ow * qx + ox * qw + oy * qz - oz * qy;
+                    ry = ow * qy - ox * qz + oy * qw + oz * qx;
+                    rz = ow * qz + ox * qy - oy * qx + oz * qw;
+
+                    //roation around car's x-axis aka side to side tilt
+                    roll  = atan2(2.0 * (rw * rx + ry * rz), 1.0 - 2.0 * (rx * rx + ry * ry)) * 180.0 / PI;
+                    float sinp = 2.0 * (rw * ry - rz * rx);
+                    sinp = constrain(sinp, -1.0, 1.0);
+                    //rotation around car's y-axis aka front to back tilt
+                    pitch = asin(sinp) * 180.0 / PI;
+                    //rotation around car's z-axis aka heading
+                    yaw   = atan2(2.0 * (rw * rz + rx * ry), 1.0 - 2.0 * (ry * ry + rz * rz)) * 180.0 / PI;
+                    break;
+                }
+
+                case SH2_LINEAR_ACCELERATION: {
+                    float lax_imu = sensorValue.un.linearAcceleration.x;
+                    float lay_imu = sensorValue.un.linearAcceleration.y;
+                    float laz_imu = sensorValue.un.linearAcceleration.z;
+                    float lax, lay, laz;
+                    imuToCarFrame(lax_imu, lay_imu, laz_imu, lax, lay, laz);
+                    forwardAccel = lax;
+                    lateralAccel = lay;
+                    heaveAccel = laz;
+                    break;
+                }
+
+                case SH2_GYROSCOPE_CALIBRATED: {
+                    float gx_imu = sensorValue.un.gyroscope.x;
+                    float gy_imu = sensorValue.un.gyroscope.y;
+                    float gz_imu = sensorValue.un.gyroscope.z;
+                    float gx, gy, gz;
+                    imuToCarFrame(gx_imu, gy_imu, gz_imu, gx, gy, gz);
+                    pitchRate = gx * RAD_TO_DEG;   // Rotation around car X (forward)
+                    rollRate  = gy * RAD_TO_DEG;   // Rotation around car Y (left)
+                    yawRate   = gz * RAD_TO_DEG;   // Rotation around car Z (up)
+
+                    break;
+                }
+            }
+        }
+
+    
+    
         float rollGradient = (fabs(lateralAccel) > 0.01) ? pitch / lateralAccel : 0.0;
         
         // hall sensor
