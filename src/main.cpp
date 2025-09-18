@@ -24,7 +24,7 @@ sh2_SensorValue_t sensorValue;
 // GPS USB setup
 USBHost myusb;
 USBSerial_BigBuffer gpsSerial(myusb);
-#define UPDATE_INTERVAL 100 //Change sampling frequency (1000 hz right now)
+#define UPDATE_INTERVAL 1 //Change sampling frequency (1000 hz right now)
 uint32_t lastUpdate = 0;
 
 #define LED1_PIN 4
