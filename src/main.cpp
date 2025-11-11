@@ -169,7 +169,7 @@ void loop() {
     // IMU data
     if (millis() - lastUpdate > UPDATE_INTERVAL) {
         lastUpdate = millis();
-        while (bno08x.getSensorEvent(&sensorValue)) {
+        if (bno08x.getSensorEvent(&sensorValue)) {
             switch (sensorValue.sensorId) {
                 case SH2_CAL_ACCEL: {
                     ax = sensorValue.un.accelerometer.x;
