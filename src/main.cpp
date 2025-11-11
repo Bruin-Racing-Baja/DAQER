@@ -31,6 +31,8 @@ uint32_t lastUpdate = 0;
 #define LED2_PIN 9
 #define LED3_PIN 10
 #define BPS A12
+#define SHOCK_1 A2
+#define SHOCK_2 A13
 
 time_t get_teensy3_time() { return Teensy3Clock.get(); }
 String lastLine = "";
@@ -69,6 +71,8 @@ float rollRate = 0;
 float yawRate = 0;
 float gpsLat = 0.0;
 float gpsLon = 0.0;
+// int shock_pot;
+// int shock_pot2;
 char log_name[32];
 
 
@@ -119,7 +123,6 @@ void setup() {
             delay(250);
         }
         logFail = true;
-        while(true);
     }
 }
 
@@ -196,7 +199,15 @@ void loop() {
         }
 
     
-        
+        //shock pot
+        shock_pot = analogRead(SHOCK_1);
+        float voltage_sp = ((shock_pot / 4095.0) * 3.3);
+        float distance = (voltage_sp / 3.3) * 250;
+
+        //shock pot2
+        shock_pot2 = analogRead(SHOCK_2);
+        float voltage_sp2 = ((shock_pot2 / 4095.0) * 3.3);
+        float distance2 = (voltage_sp2 / 3.3) * 250;
 
         // Display on OLED
         display.clearDisplay();
