@@ -41,7 +41,7 @@ bool sdFail = false;
 bool logFail = false;
 bool imuFail = false;
 int hall;
-int shock_pot;
+int shock_pot1;
 int shock_pot2;
 int bps;
 int voltageDividerRatio = 0.735;
@@ -71,8 +71,7 @@ float rollRate = 0;
 float yawRate = 0;
 float gpsLat = 0.0;
 float gpsLon = 0.0;
-// int shock_pot;
-// int shock_pot2;
+float pressure = 0.0;
 char log_name[32];
 
 
@@ -112,7 +111,7 @@ void setup() {
     if (!SD.exists(log_name)) {
         logFile = SD.open(log_name, FILE_WRITE);
     if (logFile) {
-        logFile.println("Timestamp,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,qw,qx,qy,qz");
+        logFile.println("Timestamp,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,ShockPot1,ShockPot2,BrakePressure,qw,qx,qy,qz");
         logFile.close();
     } else {
         Serial.println("Failed to create new log file");
@@ -200,14 +199,18 @@ void loop() {
 
     
         //shock pot
-        shock_pot = analogRead(SHOCK_1);
-        float voltage_sp = ((shock_pot / 4095.0) * 3.3);
-        float distance = (voltage_sp / 3.3) * 250;
+        shock_pot1 = analogRead(SHOCK_1);
+        float voltage_sp1 = ((shock_pot1 / 4095.0) * 3.3);
+        float distance1 = (voltage_sp1 / 3.3) * 250;
 
         //shock pot2
         shock_pot2 = analogRead(SHOCK_2);
         float voltage_sp2 = ((shock_pot2 / 4095.0) * 3.3);
         float distance2 = (voltage_sp2 / 3.3) * 250;
+
+        //bps
+        bps = analogRead(BPS);
+        pressure = ((bps * (1.39215686275) * 3.3 / 1023) - 0.5) * (2900 / 4);
 
         // Display on OLED
         display.clearDisplay();
@@ -249,6 +252,9 @@ void loop() {
         Serial.print(" | LatAcc: "); Serial.print(lay, 2);
         Serial.print(" | HAcc: "); Serial.print(laz, 2);
 
+        Serial.print(" | ShockPot1: "); Serial.print(shock_pot1, 2);
+        Serial.print(" | ShockPot2: "); Serial.print(shock_pot2, 2);
+
         Serial.print(" | q_car = [");
         Serial.print(qw, 4); Serial.print(", ");
         Serial.print(qx, 4); Serial.print(", ");
@@ -269,6 +275,11 @@ void loop() {
             logFile.print(lax); logFile.print(",");
             logFile.print(lay); logFile.print(",");
             logFile.print(laz); logFile.print(",");
+
+            logFile.print(distance1); logFile.print(",");
+            logFile.print(distance2); logFile.print(",");
+
+            logFile.print(bps); logFile.print(",");
 
             logFile.print(qw); logFile.print(",");
             logFile.print(qx); logFile.print(",");
