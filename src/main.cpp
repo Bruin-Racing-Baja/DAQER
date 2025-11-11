@@ -35,6 +35,7 @@ uint32_t lastUpdate = 0;
 #define SHOCK_2 A13
 
 time_t get_teensy3_time() { return Teensy3Clock.get(); }
+IntervalTimer timer;
 String lastLine = "";
 bool gpsFix = false;
 bool sdFail = false;
@@ -110,20 +111,20 @@ void setup() {
     
     if (!SD.exists(log_name)) {
         logFile = SD.open(log_name, FILE_WRITE);
-    if (logFile) {
-        logFile.println("Timestamp,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,ShockPot1,ShockPot2,BrakePressure,qw,qx,qy,qz");
-        logFile.close();
-    } else {
-        Serial.println("Failed to create new log file");
-        while(true){
-            digitalWrite(LED2_PIN, HIGH);
-            delay(250);
-            digitalWrite(LED2_PIN, LOW);
-            delay(250);
+        if (logFile) {
+            logFile.println("Timestamp,ax,ay,az,ForwardAccel,LateralAccel,HeaveAccel,ShockPot1,ShockPot2,BrakePressure,qw,qx,qy,qz");
+            logFile.close();
+        } else {
+            Serial.println("Failed to create new log file");
+            while(true){
+                digitalWrite(LED2_PIN, HIGH);
+                delay(250);
+                digitalWrite(LED2_PIN, LOW);
+                delay(250);
+            }
+            logFail = true;
         }
-        logFail = true;
     }
-}
 
     // Initialize OLED
     if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -154,143 +155,144 @@ void setup() {
     bno08x.enableReport(SH2_LINEAR_ACCELERATION, 10000);
     bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 10000);
 
-    
     display.clearDisplay();
     display.setCursor(10, 20);
     display.println("IMU + GPS Ready!");
     display.display();
     delay(1000);
+
+    timer.priority(255);
+    timer.begin(logger_function, 5 * 1e3);
 }
 
-
-void loop() {
+void logger_function() 
+{
+    Serial.print("We're here!\n");
     myusb.Task();
 
     // IMU data
-    if (millis() - lastUpdate > UPDATE_INTERVAL) {
-        lastUpdate = millis();
-        if (bno08x.getSensorEvent(&sensorValue)) {
-            switch (sensorValue.sensorId) {
-                case SH2_CAL_ACCEL: {
-                    ax = sensorValue.un.accelerometer.x;
-                    ay = sensorValue.un.accelerometer.y;
-                    az = sensorValue.un.accelerometer.z;
+    lastUpdate = millis();
+    if (bno08x.getSensorEvent(&sensorValue)) {
+        switch (sensorValue.sensorId) {
+            case SH2_CAL_ACCEL: {
+                ax = sensorValue.un.accelerometer.x;
+                ay = sensorValue.un.accelerometer.y;
+                az = sensorValue.un.accelerometer.z;
+            break;
+            }
+
+            case SH2_ROTATION_VECTOR: {
+                //Quaternions in IMU frame
+                qw = sensorValue.un.rotationVector.real;
+                qx = sensorValue.un.rotationVector.i;
+                qy = sensorValue.un.rotationVector.j;
+                qz = sensorValue.un.rotationVector.k;
+                uint8_t acc = sensorValue.un.rotationVector.accuracy;
                 break;
-                }
+            }
 
-                case SH2_ROTATION_VECTOR: {
-                    //Quaternions in IMU frame
-                    qw = sensorValue.un.rotationVector.real;
-                    qx = sensorValue.un.rotationVector.i;
-                    qy = sensorValue.un.rotationVector.j;
-                    qz = sensorValue.un.rotationVector.k;
-                    uint8_t acc = sensorValue.un.rotationVector.accuracy;
-                    break;
-                }
-
-                case SH2_LINEAR_ACCELERATION: {
-                    lax = sensorValue.un.linearAcceleration.x;
-                    lay = sensorValue.un.linearAcceleration.y;
-                    laz = sensorValue.un.linearAcceleration.z;
-                    break;
-                }
+            case SH2_LINEAR_ACCELERATION: {
+                lax = sensorValue.un.linearAcceleration.x;
+                lay = sensorValue.un.linearAcceleration.y;
+                laz = sensorValue.un.linearAcceleration.z;
+                break;
             }
         }
+    }
 
     
-        //shock pot
-        shock_pot1 = analogRead(SHOCK_1);
-        float voltage_sp1 = ((shock_pot1 / 4095.0) * 3.3);
-        float distance1 = (voltage_sp1 / 3.3) * 250;
+    //shock pot
+    shock_pot1 = analogRead(SHOCK_1);
+    float voltage_sp1 = ((shock_pot1 / 4095.0) * 3.3);
+    float distance1 = (voltage_sp1 / 3.3) * 250;
 
-        //shock pot2
-        shock_pot2 = analogRead(SHOCK_2);
-        float voltage_sp2 = ((shock_pot2 / 4095.0) * 3.3);
-        float distance2 = (voltage_sp2 / 3.3) * 250;
+    //shock pot2
+    shock_pot2 = analogRead(SHOCK_2);
+    float voltage_sp2 = ((shock_pot2 / 4095.0) * 3.3);
+    float distance2 = (voltage_sp2 / 3.3) * 250;
 
-        //bps
-        bps = analogRead(BPS);
-        pressure = ((bps * (1.39215686275) * 3.3 / 1023) - 0.5) * (2900 / 4);
+    //bps
+    bps = analogRead(BPS);
+    pressure = ((bps * (1.39215686275) * 3.3 / 1023) - 0.5) * (2900 / 4);
 
-        // Display on OLED
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.setTextSize(1);
-        display.println("Data!");
+    // Display on OLED
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.println("Data!");
         
-        display.print("ax: "); 
-        display.println(ax);
-        display.print("ay: "); 
-        display.println(ay);
-        display.print("az: "); 
-        display.println(az);
-        display.print("lax: "); 
-        display.println(ax);
-        display.print("lay: "); 
-        display.println(ay);
-        display.print("laz: "); 
-        display.println(az);
-        display.display();
+    display.print("ax: "); 
+    display.println(ax);
+    display.print("ay: "); 
+    display.println(ay);
+    display.print("az: "); 
+    display.println(az);
+    display.print("lax: "); 
+    display.println(ax);
+    display.print("lay: "); 
+    display.println(ay);
+    display.print("laz: "); 
+    display.println(az);
+    display.display();
 
-        //serial prints
-        char timestamp[32];
-        unsigned long ms = millis();
-        time_t now = ms / 1000;
-        int ms_part = ms % 1000;
-        sprintf(timestamp, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
-        year(now), month(now), day(now),
-        hour(now), minute(now), second(now), ms_part);
+    //serial prints
+    char timestamp[32];
+    unsigned long ms = millis();
+    time_t now = ms / 1000;
+    int ms_part = ms % 1000;
+    sprintf(timestamp, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+    year(now), month(now), day(now),
+    hour(now), minute(now), second(now), ms_part);
 
-        //Serial.print(timestamp);
+    Serial.print(" | ax: "); Serial.print(ax, 2);
+    Serial.print(" | ay: "); Serial.print(ay, 2);
+    Serial.print(" | az: "); Serial.print(az, 2);
 
+    Serial.print(" | ForAcc: "); Serial.print(lax, 2);
+    Serial.print(" | LatAcc: "); Serial.print(lay, 2);
+    Serial.print(" | HAcc: "); Serial.print(laz, 2);
 
-        Serial.print(" | ax: "); Serial.print(ax, 2);
-        Serial.print(" | ay: "); Serial.print(ay, 2);
-        Serial.print(" | az: "); Serial.print(az, 2);
+    Serial.print(" | ShockPot1: "); Serial.print(shock_pot1, 2);
+    Serial.print(" | ShockPot2: "); Serial.print(shock_pot2, 2);
 
-        Serial.print(" | ForAcc: "); Serial.print(lax, 2);
-        Serial.print(" | LatAcc: "); Serial.print(lay, 2);
-        Serial.print(" | HAcc: "); Serial.print(laz, 2);
-
-        Serial.print(" | ShockPot1: "); Serial.print(shock_pot1, 2);
-        Serial.print(" | ShockPot2: "); Serial.print(shock_pot2, 2);
-
-        Serial.print(" | q_car = [");
-        Serial.print(qw, 4); Serial.print(", ");
-        Serial.print(qx, 4); Serial.print(", ");
-        Serial.print(qy, 4); Serial.print(", ");
-        Serial.println(qz, 4); Serial.print("]");
+    Serial.print(" | q_car = [");
+    Serial.print(qw, 4); Serial.print(", ");
+    Serial.print(qx, 4); Serial.print(", ");
+    Serial.print(qy, 4); Serial.print(", ");
+    Serial.println(qz, 4); Serial.print("]");
 
 
-        //logging to sd card
-        logFile = SD.open(log_name, FILE_WRITE);
-        if (logFile) {
+    //logging to sd card
+    logFile = SD.open(log_name, FILE_WRITE);
+    if (logFile) {
 
-            logFile.print(timestamp); logFile.print(",");
+        logFile.print(timestamp); logFile.print(",");
 
-            logFile.print(ax); logFile.print(",");
-            logFile.print(ay); logFile.print(",");
-            logFile.print(az); logFile.print(",");
+        logFile.print(ax); logFile.print(",");
+        logFile.print(ay); logFile.print(",");
+        logFile.print(az); logFile.print(",");
 
-            logFile.print(lax); logFile.print(",");
-            logFile.print(lay); logFile.print(",");
-            logFile.print(laz); logFile.print(",");
+        logFile.print(lax); logFile.print(",");
+        logFile.print(lay); logFile.print(",");
+        logFile.print(laz); logFile.print(",");
 
-            logFile.print(distance1); logFile.print(",");
-            logFile.print(distance2); logFile.print(",");
+        logFile.print(distance1); logFile.print(",");
+        logFile.print(distance2); logFile.print(",");
 
-            logFile.print(bps); logFile.print(",");
+        logFile.print(bps); logFile.print(",");
 
-            logFile.print(qw); logFile.print(",");
-            logFile.print(qx); logFile.print(",");
-            logFile.print(qy); logFile.print(",");
-            logFile.println(qz); 
-            
+        logFile.print(qw); logFile.print(",");
+        logFile.print(qx); logFile.print(",");
+        logFile.print(qy); logFile.print(",");
+        logFile.println(qz); 
+        
 
-            logFile.close();  
-        } else {
-            Serial.println("Failed to write to log");
-        }
-
+        logFile.close();  
+    } else {
+        Serial.println("Failed to write to log");
     }
+}
+
+void loop() {
+    
 }
