@@ -36,7 +36,7 @@ IntervalTimer loggerTimer;
 
 struct SensorPacket {
     unsigned long timestamp;
-    int shock1, shock2;
+    float shock1, shock2;
 };
 volatile SensorPacket latestSample;
 volatile bool newSampleReady = false;
