@@ -8,7 +8,7 @@
 #include <SD.h>
 #include <SPI.h>
 
-#define NCIR_ADDR 0x5B
+#define NCIR_ADDR 0x5A
 
 uint16_t result;
 float temp = 0.0;
@@ -21,6 +21,7 @@ void setup() {
   delay(2000);
   Serial.begin(115200);
   Wire.begin();
+  Wire.setClock(100000);
 
   if(!SD.begin(BUILTIN_SDCARD)) {
       Serial.println("SD failed!");
@@ -79,4 +80,5 @@ void loop() {
   } else {
       Serial.println("Failed to write to log");
   }
+    delay(10);
 }
