@@ -7,6 +7,8 @@
 #include <TimeLib.h>
 #include <SD.h>
 #include <SPI.h>
+#include <stdint.h>
+
 
 #define NCIR_ADDR 0x5A
 
@@ -14,6 +16,7 @@ uint16_t result;
 float temp = 0.0;
 File logFile;
 char log_name[32];
+bool sd_initialized = false;
 
 time_t get_teensy3_time() { return Teensy3Clock.get(); }
 
@@ -39,14 +42,40 @@ void setup() {
               year(), month(), day(), hour(), minute(), second());
   }
 
-  if (!SD.exists(log_name)) {
-      logFile = SD.open(log_name, FILE_WRITE);
-      if (logFile) {
-          logFile.println("Timestamp,temp");
-          logFile.close();
-      } else {
-          Serial.println("Failed to create new log file");
+  
+  // SD initialization
+  sd_initialized = SD.sdfs.begin(SdioConfig(DMA_SDIO));
+  if (!sd_initialized) {
+    Serial.println("Warning: SD failed to initialize");
+  } else {
+    uint16_t log_name_length = 0;
+
+    if (rtc_set) {
+      log_name_length = snprintf(
+          log_name, sizeof(log_name), "log_%04d-%02d-%02d_%02d-%02d-%02d.csv",
+          year(), month(), day(), hour(), minute(), second());
+    } else {
+      strncpy(log_name, "log_unknown_time.csv", sizeof(log_name));
+      log_name_length = 20;
+    }
+
+    if (SD.exists(log_name)) {
+      char log_name_duplicate[64];
+      for (int log_num = 0; log_num < 1000; log_num++) {
+        snprintf(log_name_duplicate, sizeof(log_name_duplicate),
+                 "%.*s_%03d.csv", log_name_length - 4, log_name, log_num);
+        if (!SD.exists(log_name_duplicate)) {
+          break;
+        }
       }
+      strncpy(log_name, log_name_duplicate, sizeof(log_name));
+      log_name[sizeof(log_name) - 1] = '\0';
+    }
+    Serial.printf("Info: Logging to %s\n", log_name);
+    logFile = SD.open(log_name, FILE_WRITE);
+    if (!logFile) {
+      Serial.println("Warning: Log file was not opened! (Sarah)");
+    }
   }
 }
 
