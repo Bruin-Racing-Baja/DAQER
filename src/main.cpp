@@ -12,13 +12,8 @@
 #define SCREEN_ADDRESS 0x3D
 #define LED1_PIN 4
 #define LED2_PIN 9
-#define BUFFER_SIZE 50
-
-#define SHOCK_1 A2
-#define SHOCK_2 A13
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
 Adafruit_BNO08x bno08x;
 sh2_SensorValue_t sensorValue;
 
@@ -28,33 +23,53 @@ char log_name[32];
 File logFile;
 
 uint64_t cur_time = 0; 
-uint64_t last_analog_read_time = 0;
+uint16_t sample_count = 0;
 
-bool imu_a_ready = false; 
-bool imu_o_ready = false; 
-bool something_logged = false; 
+bool imu_initialized = false;
 
 struct IMUPacket {
     float ax, ay, az;
     float qw, qx, qy, qz;
 };
 
-struct ShockPot {
-    float dist1; 
-    float dist2; 
-};
-
 IMUPacket latestIMU;
-ShockPot latestShockPot; 
+
+void displayMessage(const char* line1, const char* line2 = "", const char* line3 = "") {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(line1);
+    if (strlen(line2) > 0) display.println(line2);
+    if (strlen(line3) > 0) display.println(line3);
+    display.display();
+}
 
 void setup() {
     Serial.begin(115200);
+    pinMode(LED1_PIN, OUTPUT);
     pinMode(LED2_PIN, OUTPUT);
+
+    // Initialize OLED
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        while (true) {
+            digitalWrite(LED1_PIN, HIGH);
+            delay(100);
+            digitalWrite(LED1_PIN, LOW);
+            delay(100);
+        }
+    }
+    
+    display.clearDisplay();
+    display.display();
+    displayMessage("Initializing...");
 
     setSyncProvider(get_teensy3_time);
     bool rtc_set = timeStatus() == timeSet && year() > 2021;
 
+    // Initialize SD card
     if (!SD.begin(BUILTIN_SDCARD)) {
+        displayMessage("SD Card", "Init Failed!");
         while (true) {
             digitalWrite(LED1_PIN, HIGH);
             delay(250);
@@ -62,7 +77,10 @@ void setup() {
             delay(250);
         }
     }
+    displayMessage("SD Card OK");
+    delay(500);
 
+    // Create log file name
     if (!rtc_set) {
         strcpy(log_name, "log_unknown_time.csv");
     } else {
@@ -70,98 +88,94 @@ void setup() {
                 year(), month(), day(), hour(), minute(), second());
     }
 
+    // Create log file 
     if (!SD.exists(log_name)) {
         File f = SD.open(log_name, FILE_WRITE);
         if (f) {
-            f.println("timestamp,ax,ay,az,qw,qx,qy,qz,shock1,shock2");
+            f.println("timestamp,ax,ay,az,qw,qx,qy,qz");
             f.close();
+            displayMessage("Log Created", log_name);
         } else {
-            Serial.println("Failed to create new log file");
+            displayMessage("Failed to", "create log file");
             while (true) {
-                digitalWrite(LED2_PIN, HIGH);
-                delay(250);
-                digitalWrite(LED2_PIN, LOW);
-                delay(250);
+                digitalWrite(LED1_PIN, HIGH);
+                delay(500);
+                digitalWrite(LED1_PIN, LOW);
+                delay(500);
             }
         }
     }
+    delay(500);
 
     logFile = SD.open(log_name, FILE_WRITE);
     if (!logFile) {
-        Serial.println("Failed to open log file for writing");
+        displayMessage("Failed to open", "log file");
         while (true);
     }
 
+    // Initialize IMU
+    displayMessage("Init IMU...");
     Wire2.begin();
-    bno08x.begin_I2C(0x4A, &Wire2);
-    bno08x.enableReport(SH2_CAL_ACCEL, 2500);
-    bno08x.enableReport(SH2_ROTATION_VECTOR, 2500);
+    Wire2.setClock(400000);
+    if (bno08x.begin_I2C(0x4A, &Wire2)) {
+        bno08x.enableReport(SH2_LINEAR_ACCELERATION, 1000);
+        bno08x.enableReport(SH2_ROTATION_VECTOR, 1000);
+        imu_initialized = true;
+        displayMessage("IMU OK", "Linear Accel +", "Rotation");
+    } else {
+        displayMessage("IMU Init", "Failed!");
+        while (true) {
+            digitalWrite(LED2_PIN, HIGH);
+            delay(100);
+            digitalWrite(LED2_PIN, LOW);
+            delay(100);
+        }
+    }
+    delay(1000);
+    
+    // Clear display after setup
+    display.clearDisplay();
+    display.display();
 }
 
 void loop() {
-    cur_time = micros();
-    char str_time[64];
-    sprintf(str_time, "%llu", (unsigned long long)cur_time);
-    String csv_input = String(str_time) + ","; 
-
     if (bno08x.getSensorEvent(&sensorValue)) {
+        cur_time = micros();
+        bool should_log = false;
+        
         switch (sensorValue.sensorId) { 
-            case SH2_CAL_ACCEL:
-                imu_a_ready = true; 
-                something_logged = true; 
-                latestIMU.ax = sensorValue.un.accelerometer.x;
-                latestIMU.ay = sensorValue.un.accelerometer.y;
-                latestIMU.az = sensorValue.un.accelerometer.z;
+            //lin acc
+            case SH2_LINEAR_ACCELERATION:
+                latestIMU.ax = sensorValue.un.linearAcceleration.x;
+                latestIMU.ay = sensorValue.un.linearAcceleration.y;
+                latestIMU.az = sensorValue.un.linearAcceleration.z;
+                should_log = true;
                 break;
+            //quat
             case SH2_ROTATION_VECTOR:
-                imu_o_ready = true; 
-                something_logged = true; 
                 latestIMU.qw = sensorValue.un.rotationVector.real;
                 latestIMU.qx = sensorValue.un.rotationVector.i;
                 latestIMU.qy = sensorValue.un.rotationVector.j;
                 latestIMU.qz = sensorValue.un.rotationVector.k;
+                should_log = true;
                 break;
         }
-    }
-
-    if (imu_a_ready) {
-        csv_input += String(latestIMU.ax) + "," +
-                        String(latestIMU.ay) + "," +
-                        String(latestIMU.az) + ",";
-    } else {
-        csv_input += ",,,";
-    }
-
-    if (imu_o_ready) {
-        csv_input += String(latestIMU.qw) + "," +
-                        String(latestIMU.qx) + "," +
-                        String(latestIMU.qy) + "," +
-                        String(latestIMU.qz) + ",";
-    } else {
-        csv_input += ",,,,";
-    }
-
-    /* Read from all analog sensors */                 
-    if ((unsigned long long)cur_time - last_analog_read_time >= 5000) {
-        something_logged = true; 
-        last_analog_read_time = micros(); 
-
-        uint32_t shock1 = analogRead(SHOCK_1);
-        uint32_t shock2 = analogRead(SHOCK_2);
-        latestShockPot.dist1 = (shock1 / 4095.0) * 250.0;
-        latestShockPot.dist2 = (shock2 / 4095.0) * 250.0;
         
-        csv_input += String(latestShockPot.dist1) + "," + String(latestShockPot.dist2);
-    } else {
-        csv_input += ",";
+        // Log immediately
+        if (should_log) {
+            char buffer[128];
+            sprintf(buffer, "%llu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                    (unsigned long long)cur_time,
+                    latestIMU.ax, latestIMU.ay, latestIMU.az,
+                    latestIMU.qw, latestIMU.qx, latestIMU.qy, latestIMU.qz);
+            logFile.println(buffer);
+            
+            // Flush every 50 samples instead of every sample
+            sample_count++;
+            if (sample_count >= 50) {
+                logFile.flush();
+                sample_count = 0;
+            }
+        }
     }
-
-    if (something_logged) {
-        Serial.println("Logging Something.");
-        Serial.println(csv_input);
-        logFile.println(csv_input);
-        logFile.flush();
-    }
-
-    something_logged = false; 
 }
