@@ -12,6 +12,8 @@
 #define SCREEN_ADDRESS 0x3D
 #define LED1_PIN 4
 #define LED2_PIN 9
+#define SHOCK_1 A2
+#define SHOCK_2 A13
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_BNO08x bno08x;
@@ -32,7 +34,22 @@ struct IMUPacket {
     float qw, qx, qy, qz;
 };
 
+struct ShockPacket {
+    float shock1_mm, shock2_mm;
+};
+
 IMUPacket latestIMU;
+ShockPacket latestShock;
+
+IntervalTimer shockTimer;
+
+
+void shock_logger_function() {
+    uint16_t shock1_raw = analogRead(SHOCK_1);
+    uint16_t shock2_raw = analogRead(SHOCK_2);
+    latestShock.shock1_mm = (shock1_raw / 4095.0) * 250.0;
+    latestShock.shock2_mm = (shock2_raw / 4095.0) * 250.0;
+}
 
 void displayMessage(const char* line1, const char* line2 = "", const char* line3 = "") {
     display.clearDisplay();
@@ -92,7 +109,7 @@ void setup() {
     if (!SD.exists(log_name)) {
         File f = SD.open(log_name, FILE_WRITE);
         if (f) {
-            f.println("timestamp,ax,ay,az,qw,qx,qy,qz");
+            f.println("timestamp,ax,ay,az,qw,qx,qy,qz,shock1_mm,shock2_mm");
             f.close();
             displayMessage("Log Created", log_name);
         } else {
@@ -121,7 +138,7 @@ void setup() {
         bno08x.enableReport(SH2_LINEAR_ACCELERATION, 1000);
         bno08x.enableReport(SH2_ROTATION_VECTOR, 1000);
         imu_initialized = true;
-        displayMessage("IMU OK", "Linear Accel +", "Rotation");
+        displayMessage("IMU OK", "Linear Accel ", "Rotation Shock Pots");
     } else {
         displayMessage("IMU Init", "Failed!");
         while (true) {
@@ -133,25 +150,27 @@ void setup() {
     }
     delay(1000);
     
-    // Clear display after setup
     display.clearDisplay();
     display.display();
+
+    shockTimer.priority(255);
+    shockTimer.begin(shock_logger_function, 2500);
 }
 
 void loop() {
+
     if (bno08x.getSensorEvent(&sensorValue)) {
         cur_time = micros();
         bool should_log = false;
         
         switch (sensorValue.sensorId) { 
-            //lin acc
             case SH2_LINEAR_ACCELERATION:
                 latestIMU.ax = sensorValue.un.linearAcceleration.x;
                 latestIMU.ay = sensorValue.un.linearAcceleration.y;
                 latestIMU.az = sensorValue.un.linearAcceleration.z;
                 should_log = true;
                 break;
-            //quat
+                
             case SH2_ROTATION_VECTOR:
                 latestIMU.qw = sensorValue.un.rotationVector.real;
                 latestIMU.qx = sensorValue.un.rotationVector.i;
@@ -161,16 +180,15 @@ void loop() {
                 break;
         }
         
-        // Log immediately
         if (should_log) {
-            char buffer[128];
-            sprintf(buffer, "%llu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+            char buffer[160];
+            sprintf(buffer, "%llu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
                     (unsigned long long)cur_time,
                     latestIMU.ax, latestIMU.ay, latestIMU.az,
-                    latestIMU.qw, latestIMU.qx, latestIMU.qy, latestIMU.qz);
+                    latestIMU.qw, latestIMU.qx, latestIMU.qy, latestIMU.qz,
+                    latestShock.shock1_mm, latestShock.shock2_mm);
             logFile.println(buffer);
             
-            // Flush every 50 samples instead of every sample
             sample_count++;
             if (sample_count >= 50) {
                 logFile.flush();
